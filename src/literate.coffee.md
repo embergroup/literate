@@ -17,48 +17,102 @@ Depends on [Commander.js](https://github.com/tj/commander.js). Use the usual
 
 ## Setup
 
-		literate = (files..., args) ->
+    literate = (files..., args) ->
 
 Import some modules.
 
-			fs = require 'fs'
+      fs = require 'fs'
+      path = require 'path'
+      child = require 'child_process'
 
 List a bunch of languages by file extension with the compilers that the output
 of this program should be piped to if the `-c` option is used.
 
-			compilers =
-				'c': if args.use_clang 'clang <> -o ' else 'gcc <> -o ' # C
-				'cpp': if args.use_clang 'clang <> -o ' else 'g++ <> -o ' # C++
-				'cc': if args.use_clang 'clang <> -o ' else 'g++ <> -o ' # C++
-				'cxx': if args.use_clang 'clang <> -o ' else 'g++ <> -o ' # C++
-				'm': 'clang <> -o ' # Objective-C
-				'java': 'javac <>' # Java
+      CC = if args.use_clang 'clang' else 'gcc'
+      compilers =
+        'c': {cmd: CC, preargs: '', postargs: '-o'}
+        'cpp': {cmd: CC, preargs: '', postargs: '-o'}
+        'cc': {cmd: CC, preargs: '', postargs: '-o'}
+        'cxx': {cmd: CC, preargs: '', postargs: '-o'}
+        'm': {cmd: 'clang', preargs: '', postargs: '-o'}
+        'java': {cmd: 'javac', preargs: '', postargs: ''}
 
 ## Parser
 
 Do the following for each file:
 
-			for file in files
+      multilingual = false
+      old_out_ext = ''
+      outputs = for filename in files
 
 Read it in to a string.
+
+        done = false
+        fs.readFile filename, {encoding: 'utf8'}, (err, data) ->
+          if err
+            console.error err
+            return undefined
+
+Separate the input into lines.
+
+          lines = data.split '\n'
+
+Iterate through the lines, doing the following:
+
+          inFencedBlock = false
+          output = for line in lines
+
+If the line begins with three backticks (\`\`\`), begin or end a fenced block.
+
+            if line.slice 0, 3 is '```'
+              inFencedBlock = !inFencedBlock
+              continue
+
+If the line begins with four spaces or a tab, or we are inside a fenced code block,
+keep it (removing the spaces) and output it to the output file. Otherwise,
+discard it.
+
+            else if inFencedBlock
+              line
+            else if line.slice 0, 1 is '\u0009' # tab
+              line.slice 1
+            else if line.slice 0, 4 is '    ' # four spaces
+              line.slice 4
 
 Determine the appropriate output extension, and set a flag if it changes. (For
 the compilation stage later.)
 
-Create the output file with an appropriate file name.
+          [name, exts...] = path.basename(filename).split '.'
+          out_ext = if exts[exts.length-1] is 'md' then exts[exts.length-2]
+          else if exts[exts.length-2].slice 0, 3 is 'lit'
+            exts[exts.length-1].slice 3
+          else exts[exts.length-1]
+          output_name = path.dirname(filename) + path.sep + name + '.' + out_ext
+          if (old_out_ext != '') and (out_ext != old_out_ext)
+            multilingual = true
+          old_out_ext = out_ext
 
-Separate the input into lines.
+Write the output to the output file and tell the loop we're done
 
-Iterate through the lines, doing the following:
+          fs.writeFileSync output_name, lines.join '\n' + '\n'
+          done = true;
 
-If the line begins with three backticks (`\`\`\``), begin or end a fenced block.
+        until done
+          continue
 
-If the line begins with four spaces, or we are inside a fenced code block,
-keep it (removing the spaces) and output it to the output file. Otherwise,
-discard it.
+Append the output file name to the list (CoffeeScript does this).
+
+        output_name
 
 ## Compilation (optional)
 
 If the compile flag is set...
 
-Check to make sure all files are in the same language, otherwise exit or return.
+Check to make sure all files are in the same language, otherwise return.
+
+Call the appropriate command, passing it this process's stdin and stdout.
+
+The End.
+
+    module.exports = literate
+    void 0
